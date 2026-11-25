@@ -6,6 +6,7 @@ PORT = int(os.environ.get("PORT", "8080"))
 DATA_FILE = os.environ.get("KEYS_FILE", os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "keys.json"))
 PREFIX = "ex_key_"
 LOCK = threading.Lock()
+CORS_ORIGINS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "*").split(",") if o.strip()]
 TYPES = ("yapay-zeka", "ceviri", "arama-motoru", "genel")
 
 
@@ -40,13 +41,36 @@ def mask(key):
 PANEL_HTML = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "panel.html"), encoding="utf-8").read()
 
 
+def ai_reply(message):
+    # Placeholder: no model provider is configured. Replace with a real model call.
+    return "Mesajınız alındı: " + message
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "ExServer"
+
+    def cors(self):
+        origin = self.headers.get("Origin")
+        if "*" in CORS_ORIGINS:
+            self.send_header("Access-Control-Allow-Origin", "*")
+        elif origin in CORS_ORIGINS:
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, x-api-key, ex-api-key")
+        self.send_header("Access-Control-Max-Age", "86400")
+
+    def do_OPTIONS(self):
+        self.send_response(200)
+        self.cors()
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     def send(self, code, obj):
         body = json.dumps(obj).encode()
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
+        self.cors()
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -60,7 +84,7 @@ class Handler(BaseHTTPRequestHandler):
             return {}
 
     def extract(self, b):
-        k = self.headers.get("x-api-key")
+        k = self.headers.get("ex-api-key") or self.headers.get("x-api-key")
         auth = self.headers.get("Authorization", "")
         if not k and auth.lower().startswith("bearer "):
             k = auth[7:].strip()
@@ -93,6 +117,18 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         p = self.path_only()
         b = self.body()
+        if p == "/api/ai":
+            key = self.extract(b)
+            if not isinstance(key, str) or not key.startswith(PREFIX):
+                return self.send(401, {"error": "missing or malformed api key (ex-api-key header)"})
+            with LOCK:
+                rec = load().get(digest(key))
+            if not (rec and rec["active"]):
+                return self.send(401, {"error": "invalid or revoked api key"})
+            msg = b.get("message") or b.get("prompt")
+            if not isinstance(msg, str) or not msg.strip():
+                return self.send(400, {"error": "message required"})
+            return self.send(200, {"reply": ai_reply(msg.strip())})
         if p == "/api/keys/create":
             label = str(b.get("label") or "").strip()
             if not label:
