@@ -61,10 +61,14 @@ async function load(){
     b.onclick=async()=>{if(!confirm('Bu anahtar iptal edilsin mi?'))return;try{await api('/api/keys/revoke',{id:k.id});load();}catch(e){alert(e.message);}};
     d.append(l,b);L.append(d);}
 }
-document.querySelectorAll('.opt').forEach(b=>b.onclick=()=>{
-  cur=b.dataset.t;$('title').textContent=NAMES[cur]+' API Key';$('ltitle').textContent=NAMES[cur]+' anahtarlarınız';load().catch(e=>{$('list').textContent=e.message;});
-  $('new').hidden=true;$('msg').textContent='';$('label').value='';show('create');$('label').focus();});
-$('exit').onclick=()=>{cur=null;show('home');};
+const PATHS={'yapay-zeka':'/api/keys/ai','ceviri':'/api/keys/translate','arama-motoru':'/api/keys/search'};
+function open_(t){cur=t;$('title').textContent=NAMES[t]+' API Key';$('ltitle').textContent=NAMES[t]+' anahtarlarınız';
+  $('new').hidden=true;$('msg').textContent='';$('label').value='';show('create');load().catch(e=>{$('list').textContent=e.message;});}
+function route(){const t=Object.keys(PATHS).find(k=>PATHS[k]===location.pathname.replace(/\/$/,''));
+  if(t)open_(t);else{cur=null;show('home');}}
+document.querySelectorAll('.opt').forEach(b=>b.onclick=()=>{history.pushState(null,'',PATHS[b.dataset.t]);route();$('label').focus();});
+$('exit').onclick=()=>{history.pushState(null,'','/');route();};
+window.onpopstate=route;route();
 $('f').onsubmit=async e=>{e.preventDefault();$('msg').textContent='';
   try{const j=await api('/api/keys/create',{label:$('label').value,type:cur});
     $('key').textContent=j.api_key;$('new').hidden=false;$('label').value='';load();}
