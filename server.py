@@ -36,6 +36,9 @@ def mask(key):
     return key[:len(PREFIX) + 4] + "..." + key[-4:]
 
 
+PANEL_HTML = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "panel.html"), encoding="utf-8").read()
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "ExServer"
 
@@ -67,6 +70,14 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         p = self.path_only()
+        if p in ("/", "/panel"):
+            body = PANEL_HTML.encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if p == "/health":
             return self.send(200, {"status": "ok", "service": "ExServer Service", "time": now()})
         if p == "/api/keys":
@@ -92,6 +103,18 @@ class Handler(BaseHTTPRequestHandler):
                 save(db)
             return self.send(201, {"api_key": key, "label": label, "active": True})
         if p in ("/api/keys/verify", "/api/keys/revoke"):
+            if p.endswith("revoke") and isinstance(b.get("id"), str) and b.get("id"):
+                with LOCK:
+                    db = load()
+                    h = next((x for x in db if x.startswith(b["id"]) and len(b["id"]) >= 12), None)
+                    if not h:
+                        return self.send(404, {"error": "key not found"})
+                    rec = db[h]
+                    if rec["active"]:
+                        rec["active"] = False
+                        rec["revoked_at"] = now()
+                        save(db)
+                return self.send(200, {"revoked": True, "key": rec["masked"]})
             key = self.extract(b) if p.endswith("verify") else (b.get("api_key") or self.extract(b))
             if not isinstance(key, str) or not key.startswith(PREFIX):
                 return self.send(400 if p.endswith("revoke") else 401,
