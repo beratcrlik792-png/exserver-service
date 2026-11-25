@@ -28,7 +28,6 @@ code{background:#eee;padding:2px 5px;border-radius:4px;word-break:break-all}
     <button class="opt" data-t="ceviri">Çeviri için API anahtarınızı oluşturun</button>
     <button class="opt" data-t="arama-motoru">Arama motoru için API anahtarınızı oluşturun</button>
   </div>
-  <div class="card"><b>Mevcut anahtarlar</b><div id="list"></div></div>
 </section>
 <section id="create" hidden>
   <h1 id="title"></h1>
@@ -38,6 +37,7 @@ code{background:#eee;padding:2px 5px;border-radius:4px;word-break:break-all}
     <div class="row"><button class="p">Anahtar oluştur</button><button type="button" class="s" id="exit">Çıkış</button></div></form>
     <div id="msg" class="err"></div>
   </div>
+  <div class="card"><b id="ltitle"></b><div id="list"></div></div>
 </section>
 <script>
 const $=id=>document.getElementById(id);
@@ -47,7 +47,7 @@ async function api(p,body){const r=await fetch(p,body?{method:'POST',headers:{'C
   const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||r.status);return j;}
 function show(id){$('home').hidden=id!=='home';$('create').hidden=id!=='create';}
 async function load(){
-  const {keys}=await api('/api/keys');const L=$('list');L.textContent='';
+  const all=(await api('/api/keys')).keys;const keys=all.filter(k=>k.type===cur);const L=$('list');L.textContent='';
   if(!keys.length){L.innerHTML='<p class="off">Kayıtlı anahtar yok</p>';return;}
   for(const k of keys){
     const d=document.createElement('div');d.className='item';
@@ -62,12 +62,11 @@ async function load(){
     d.append(l,b);L.append(d);}
 }
 document.querySelectorAll('.opt').forEach(b=>b.onclick=()=>{
-  cur=b.dataset.t;$('title').textContent=NAMES[cur]+' API Key';
+  cur=b.dataset.t;$('title').textContent=NAMES[cur]+' API Key';$('ltitle').textContent=NAMES[cur]+' anahtarlarınız';load().catch(e=>{$('list').textContent=e.message;});
   $('new').hidden=true;$('msg').textContent='';$('label').value='';show('create');$('label').focus();});
-$('exit').onclick=()=>{show('home');load().catch(()=>{});};
+$('exit').onclick=()=>{cur=null;show('home');};
 $('f').onsubmit=async e=>{e.preventDefault();$('msg').textContent='';
   try{const j=await api('/api/keys/create',{label:$('label').value,type:cur});
-    $('key').textContent=j.api_key;$('new').hidden=false;$('label').value='';}
+    $('key').textContent=j.api_key;$('new').hidden=false;$('label').value='';load();}
   catch(e){$('msg').textContent=e.message;}};
-load().catch(e=>{$('list').textContent=e.message;});
 </script></main></body></html>
