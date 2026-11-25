@@ -6,6 +6,7 @@ PORT = int(os.environ.get("PORT", "8080"))
 DATA_FILE = os.environ.get("KEYS_FILE", os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "keys.json"))
 PREFIX = "ex_key_"
 LOCK = threading.Lock()
+CORS_ORIGINS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "*").split(",") if o.strip()]
 TYPES = ("yapay-zeka", "ceviri", "arama-motoru", "genel")
 
 
@@ -43,10 +44,28 @@ PANEL_HTML = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "pane
 class Handler(BaseHTTPRequestHandler):
     server_version = "ExServer"
 
+    def cors(self):
+        origin = self.headers.get("Origin")
+        if "*" in CORS_ORIGINS:
+            self.send_header("Access-Control-Allow-Origin", "*")
+        elif origin in CORS_ORIGINS:
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, x-api-key")
+        self.send_header("Access-Control-Max-Age", "86400")
+
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self.cors()
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
     def send(self, code, obj):
         body = json.dumps(obj).encode()
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
+        self.cors()
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
