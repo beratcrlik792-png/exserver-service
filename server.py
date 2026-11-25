@@ -71,7 +71,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         p = self.path_only()
-        if p in ("/", "/panel"):
+        if p in ("/", "/panel", "/api/keys/ai", "/api/keys/translate", "/api/keys/search"):
             body = PANEL_HTML.encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
