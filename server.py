@@ -6,6 +6,7 @@ PORT = int(os.environ.get("PORT", "8080"))
 DATA_FILE = os.environ.get("KEYS_FILE", os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "keys.json"))
 PREFIX = "ex_key_"
 LOCK = threading.Lock()
+TYPES = ("yapay-zeka", "ceviri", "arama-motoru", "genel")
 
 
 def now():
@@ -84,7 +85,7 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK:
                 db = load()
             return self.send(200, {"keys": [
-                {"id": h[:12], "label": r["label"], "key": r["masked"], "active": r["active"],
+                {"id": h[:12], "label": r["label"], "type": r.get("type", "genel"), "key": r["masked"], "active": r["active"],
                  "created_at": r["created_at"], "revoked_at": r.get("revoked_at")}
                 for h, r in db.items()]})
         self.send(404, {"error": "not found"})
@@ -96,12 +97,15 @@ class Handler(BaseHTTPRequestHandler):
             label = str(b.get("label") or "").strip()
             if not label:
                 return self.send(400, {"error": "label required"})
+            ktype = str(b.get("type") or "genel").strip()
+            if ktype not in TYPES:
+                return self.send(400, {"error": "invalid type"})
             key = PREFIX + secrets.token_urlsafe(32)
             with LOCK:
                 db = load()
-                db[digest(key)] = {"label": label[:200], "masked": mask(key), "active": True, "created_at": now()}
+                db[digest(key)] = {"label": label[:200], "masked": mask(key), "type": ktype, "active": True, "created_at": now()}
                 save(db)
-            return self.send(201, {"api_key": key, "label": label, "active": True})
+            return self.send(201, {"api_key": key, "label": label, "type": ktype, "active": True})
         if p in ("/api/keys/verify", "/api/keys/revoke"):
             if p.endswith("revoke") and isinstance(b.get("id"), str) and b.get("id"):
                 with LOCK:
