@@ -1,4 +1,5 @@
 import json, os, secrets, hmac, hashlib, threading, tempfile
+import urllib.request, urllib.error
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -8,6 +9,8 @@ PREFIX = "ex_key_"
 LOCK = threading.Lock()
 CORS_ORIGINS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "*").split(",") if o.strip()]
 TYPES = ("yapay-zeka", "ceviri", "arama-motoru", "genel")
+MODELS = ["exai-2.5-flash", "exai-3-flash", "exai-3.5-flash", "exai-4.5-pro", "exai-5-ultra", "exai-6.5-max"]
+DEFAULT_MODEL = "exai-3.5-flash"
 
 
 def now():
@@ -41,9 +44,33 @@ def mask(key):
 PANEL_HTML = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "panel.html"), encoding="utf-8").read()
 
 
-def ai_reply(message):
-    # Placeholder: no model provider is configured. Replace with a real model call.
-    return "Mesajınız alındı: " + message
+class UpstreamError(Exception):
+    pass
+
+
+def ai_reply(message, model):
+    url = os.environ.get("EXAI_API_URL")
+    api_key = os.environ.get("EXAI_API_KEY")
+    if url and api_key:
+        req = urllib.request.Request(
+            url,
+            data=json.dumps({"model": model, "message": message}).encode(),
+            headers={"Content-Type": "application/json", "Authorization": "Bearer " + api_key},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                data = json.loads(r.read())
+            reply = data.get("reply") if isinstance(data, dict) else None
+        except urllib.error.HTTPError as e:
+            raise UpstreamError("upstream returned HTTP %d" % e.code)
+        except (urllib.error.URLError, OSError, ValueError):
+            raise UpstreamError("upstream request failed")
+        if not isinstance(reply, str):
+            raise UpstreamError("upstream returned an invalid response")
+        return reply
+    # Placeholder: upstream is not configured (EXAI_API_URL / EXAI_API_KEY unset). Replace with a real model call.
+    return "[" + model + "] Mesajınız alındı: " + message
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -105,6 +132,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         if p == "/health":
             return self.send(200, {"status": "ok", "service": "ExServer Service", "time": now()})
+        if p == "/api/models":
+            return self.send(200, {"models": MODELS, "default": DEFAULT_MODEL})
         if p == "/api/keys":
             with LOCK:
                 db = load()
@@ -125,10 +154,21 @@ class Handler(BaseHTTPRequestHandler):
                 rec = load().get(digest(key))
             if not (rec and rec["active"]):
                 return self.send(401, {"error": "invalid or revoked api key"})
+            model = b.get("model")
+            if model is None or (isinstance(model, str) and not model.strip()):
+                model = DEFAULT_MODEL
+            elif not isinstance(model, str) or model.strip() not in MODELS:
+                return self.send(400, {"error": "unknown model", "models": MODELS})
+            else:
+                model = model.strip()
             msg = b.get("message") or b.get("prompt")
             if not isinstance(msg, str) or not msg.strip():
                 return self.send(400, {"error": "message required"})
-            return self.send(200, {"reply": ai_reply(msg.strip())})
+            try:
+                reply = ai_reply(msg.strip(), model)
+            except UpstreamError as e:
+                return self.send(502, {"error": "upstream error: " + str(e)})
+            return self.send(200, {"reply": reply, "model": model})
         if p == "/api/keys/create":
             label = str(b.get("label") or "").strip()
             if not label:
