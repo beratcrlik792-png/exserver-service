@@ -8,6 +8,8 @@ PREFIX = "ex_key_"
 LOCK = threading.Lock()
 CORS_ORIGINS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "*").split(",") if o.strip()]
 TYPES = ("yapay-zeka", "ceviri", "arama-motoru", "genel")
+MODELS = ("ExAI 2.5 Flash", "ExAI 3 Flash", "ExAI 3.5 Flash", "ExAI 6.5 Max")
+DEFAULT_MODEL = "ExAI 3 Flash"
 
 
 def now():
@@ -41,9 +43,9 @@ def mask(key):
 PANEL_HTML = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "panel.html"), encoding="utf-8").read()
 
 
-def ai_reply(message):
-    # Placeholder: no model provider is configured. Replace with a real model call.
-    return "Mesajınız alındı: " + message
+def ai_reply(message, model):
+    # Still a placeholder: no model provider is configured. A real provider call per model must replace this.
+    return "[" + model + "] Mesajınız alındı: " + message
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -105,6 +107,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         if p == "/health":
             return self.send(200, {"status": "ok", "service": "ExServer Service", "time": now()})
+        if p == "/api/models":
+            return self.send(200, {"models": list(MODELS), "default": DEFAULT_MODEL})
         if p == "/api/keys":
             with LOCK:
                 db = load()
@@ -128,7 +132,10 @@ class Handler(BaseHTTPRequestHandler):
             msg = b.get("message") or b.get("prompt")
             if not isinstance(msg, str) or not msg.strip():
                 return self.send(400, {"error": "message required"})
-            return self.send(200, {"reply": ai_reply(msg.strip())})
+            model = b.get("model") or DEFAULT_MODEL
+            if model not in MODELS:
+                return self.send(400, {"error": "invalid model", "models": list(MODELS)})
+            return self.send(200, {"reply": ai_reply(msg.strip(), model), "model": model})
         if p == "/api/keys/create":
             label = str(b.get("label") or "").strip()
             if not label:
